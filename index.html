@@ -1,1 +1,567 @@
-index.html [generated with web_code_canvas tool]
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UTAR 校园模拟器 3D</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+        body, html { width: 100%; height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #000; }
+        #canvas-container { width: 100%; height: 100%; display: block; }
+        
+        /* UI 遮罩与提示 */
+        #start-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 23, 42, 0.9); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 100; color: white;
+            text-align: center; backdrop-filter: blur(8px);
+        }
+        #start-btn {
+            padding: 16px 40px; font-size: 22px; font-weight: bold; color: #fff;
+            background: linear-gradient(135deg, #0284c7, #0369a1); border: none;
+            border-radius: 50px; cursor: pointer; margin-top: 25px;
+            box-shadow: 0 10px 25px rgba(2, 132, 199, 0.4); transition: all 0.2s ease;
+        }
+        #start-btn:hover { transform: translateY(-2px); box-shadow: 0 15px 30px rgba(2, 132, 199, 0.6); }
+        
+        #hud {
+            position: absolute; top: 20px; left: 20px; z-index: 10; color: white;
+            background: rgba(15, 23, 42, 0.75); padding: 15px 25px; border-radius: 12px;
+            backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.1);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3); pointer-events: none;
+        }
+        #hud h2 { font-size: 18px; color: #38bdf8; margin-bottom: 5px; }
+        #hud p { font-size: 14px; color: #e2e8f0; margin: 3px 0; }
+        
+        #interaction-prompt {
+            position: absolute; bottom: 15%; left: 50%; transform: translateX(-50%);
+            background: rgba(2, 132, 199, 0.9); color: white; padding: 12px 28px;
+            border-radius: 30px; font-size: 18px; font-weight: bold; display: none;
+            z-index: 20; box-shadow: 0 4px 20px rgba(0,0,0,0.4); animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse { 0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); } 50% { opacity: 0.85; transform: translateX(-50%) scale(1.03); } }
+        
+        /* 交互弹窗 & 对话框 */
+        .modal {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(15, 23, 42, 0.95); border: 2px solid #0284c7; border-radius: 16px;
+            padding: 30px; color: white; z-index: 50; display: none; min-width: 360px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.6); backdrop-filter: blur(10px);
+        }
+        .modal h3 { font-size: 22px; color: #38bdf8; margin-bottom: 15px; text-align: center; }
+        .modal-btn {
+            width: 100%; padding: 12px; margin: 8px 0; background: #1e293b; border: 1px solid #334155;
+            color: #f8fafc; font-size: 16px; border-radius: 8px; cursor: pointer; transition: 0.2s;
+        }
+        .modal-btn:hover { background: #0284c7; border-color: #38bdf8; }
+        
+        /* 电梯 UI */
+        #elevator-ui {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: #0f172a; border: 3px solid #334155; border-radius: 16px; width: 320px;
+            padding: 20px; color: white; z-index: 60; display: none; text-align: center;
+        }
+        #elevator-display {
+            background: #000; color: #ef4444; font-family: monospace; font-size: 36px;
+            padding: 10px; border-radius: 8px; border: 2px solid #1e293b; margin-bottom: 20px;
+        }
+        .elevator-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .btn-floor {
+            aspect-ratio: 1; border-radius: 50%; background: #1e293b; border: 2px solid #475569;
+            color: white; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.2s;
+        }
+        .btn-floor.active { background: #eab308; color: #000; border-color: #fef08a; box-shadow: 0 0 15px #eab308; }
+        
+        /* WBLE 模拟界面 */
+        #wble-screen {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 85%; height: 80%; background: #f1f5f9; border-radius: 12px; z-index: 70;
+            display: none; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+        }
+        #wble-header { background: #1e3a8a; color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-align: center; }
+        #wble-body { display: flex; flex: 1; background: #fff; color: #334155; }
+        #wble-sidebar { width: 260px; background: #f8fafc; border-right: 1px solid #e2e8f0; padding: 20px; }
+        #wble-content { flex: 1; padding: 25px; background: #fff; overflow-y: auto; }
+        
+        /* 黑屏过渡动画 */
+        #fade-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; opacity: 0; pointer-events: none; z-index: 200; transition: opacity 0.5s ease;
+        }
+    </style>
+    <!-- 引入 Three.js 原生库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <div id="fade-overlay"></div>
+
+    <!-- 启动遮罩 -->
+    <div id="start-screen">
+        <h1 style="font-size: 36px; margin-bottom: 10px; color: #38bdf8;">UTAR 校园模拟器 3D</h1>
+        <p style="font-size: 16px; color: #94a3b8;">双溪龙校区 (Sungai Long Campus) 探索体验</p>
+        <button id="start-btn">开始体验 UTAR 模拟器</button>
+    </div>
+
+    <!-- HUD 操作指南 -->
+    <div id="hud">
+        <h2>📍 任务目标</h2>
+        <p id="task-text">前往 KA Block 大门</p>
+        <p style="color: #64748b; font-size: 12px; margin-top: 8px;">操作说明：WASD 移动 | 鼠标控制视角 | E 交互</p>
+    </div>
+
+    <!-- 交互按键提示 -->
+    <div id="interaction-prompt">按 E 进行互动</div>
+
+    <!-- 电梯 UI Modal -->
+    <div id="elevator-ui">
+        <h3 style="margin-bottom: 10px;">KA 电梯控制台</h3>
+        <div id="elevator-display">G</div>
+        <div class="elevator-grid">
+            <button class="btn-floor" onclick="selectFloor('8')">8</button>
+            <button class="btn-floor" onclick="selectFloor('7')">7</button>
+            <button class="btn-floor" onclick="selectFloor('6')">6</button>
+            <button class="btn-floor" id="btn-f5" onclick="selectFloor('5')">5</button>
+            <button class="btn-floor" onclick="selectFloor('4')">4</button>
+            <button class="btn-floor" onclick="selectFloor('3')">3</button>
+            <button class="btn-floor" onclick="selectFloor('2')">2</button>
+            <button class="btn-floor" onclick="selectFloor('1')">1</button>
+            <button class="btn-floor" id="btn-fg" onclick="selectFloor('G')">G</button>
+            <button class="btn-floor" onclick="selectFloor('B')">B</button>
+        </div>
+        <button class="modal-btn" id="exit-elevator-btn" style="margin-top: 15px; display: none;" onclick="exitElevator()">走出电梯</button>
+    </div>
+
+    <!-- 对话选择框 Modal -->
+    <div id="dialogue-modal" class="modal">
+        <h3 id="dialogue-title">对话</h3>
+        <p id="dialogue-speaker" style="color: #94a3b8; font-size: 14px; margin-bottom: 10px;"></p>
+        <p id="dialogue-text" style="margin-bottom: 20px; font-size: 16px; line-height: 1.5;"></p>
+        <div id="dialogue-options"></div>
+    </div>
+
+    <!-- WBLE 电脑系统界面 Modal -->
+    <div id="wble-screen">
+        <div id="wble-header">
+            <div><strong>UTAR WBLE</strong> (Web-Based Learning Environment)</div>
+            <div style="font-size: 14px;">Logged in as: <strong>KEVIN LIM</strong></div>
+        </div>
+        <div id="wble-body">
+            <div id="wble-sidebar">
+                <h4 style="margin-bottom: 15px; color: #1e3a8a;">My Courses</h4>
+                <ul style="list-style: none; font-size: 13px; line-height: 2.2;">
+                    <li>📘 INTERNET ENGLISH</li>
+                    <li>📘 UKAI3013 E-COMMERCE</li>
+                    <li>📘 UKEA2043 ECONOMIC DEV</li>
+                    <li>📘 UKFF3363 ISLAMIC FINANCE</li>
+                </ul>
+            </div>
+            <div id="wble-content">
+                <h3 style="color: #1e3a8a; margin-bottom: 15px;">Welcome to UTAR WBLE (SG. LONG Campus)</h3>
+                <div style="background: #e2e8f0; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <p><strong>Announcements:</strong></p>
+                    <p style="font-size: 14px; margin-top: 5px;">Class KA501 Web Development lecture is now active.</p>
+                </div>
+                <button class="modal-btn" style="width: 200px; background: #dc2626;" onclick="leaveClassroom()">离开课室</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 全局变量声明 ---
+        let scene, camera, renderer;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let yaw = 0, pitch = 0;
+        let isPointerLocked = false;
+        let playerPos = new THREE.Vector3(0, 1.7, 15);
+        let speed = 0.7; // 70/100 移速设定
+        
+        let currentSceneState = 'CAMPUS'; // CAMPUS, KA_LOBBY, KA_ELEVATOR, KA_FLOOR5, CLASSROOM, HAWKER_STREET, HAWKER_INSIDE, HOME_STREET, HOME_ROOM
+        let selectedDrink = '';
+        let chickenChopCount = 0;
+        
+        // 音效引擎
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playBeep(freq = 440, duration = 0.1) {
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.frequency.value = freq;
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
+                osc.stop(audioCtx.currentTime + duration);
+            } catch(e){}
+        }
+
+        // --- 初始化 Three.js 场景 ---
+        function init() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87ceeb); // 天蓝色背景
+            scene.fog = new THREE.FogExp2(0x87ceeb, 0.015);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.copy(playerPos);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            // 光照设置
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(20, 40, 20);
+            dirLight.castShadow = true;
+            scene.add(dirLight);
+
+            // 建立校园环境 (Scene 1 初始状态)
+            buildCampusScene();
+
+            // 事件绑定
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+            document.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('resize', onWindowResize);
+
+            document.getElementById('start-btn').addEventListener('click', () => {
+                document.getElementById('start-screen').style.display = 'none';
+                document.body.requestPointerLock();
+                audioCtx.resume();
+            });
+
+            animate();
+        }
+
+        // --- 画面建立函数 ---
+        function buildCampusScene() {
+            clearScene();
+            
+            // 黑色沥青马路
+            const roadGeo = new THREE.PlaneGeometry(20, 100);
+            const roadMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+            const road = new THREE.Mesh(roadGeo, roadMat);
+            road.rotation.x = -Math.PI / 2;
+            scene.add(road);
+
+            // 双黄线
+            const lineGeo = new THREE.PlaneGeometry(0.3, 100);
+            const lineMat = new THREE.MeshBasicMaterial({ color: 0xeab308 });
+            const line = new THREE.Mesh(lineGeo, lineMat);
+            line.rotation.x = -Math.PI / 2;
+            line.position.y = 0.01;
+            scene.add(line);
+
+            // KA Block 建筑 (红砖经典楼)
+            const kaBuilding = new THREE.Mesh(
+                new THREE.BoxGeometry(20, 15, 20),
+                new THREE.MeshStandardMaterial({ color: 0x9a3412 })
+            );
+            kaBuilding.position.set(-18, 7.5, 0);
+            scene.add(kaBuilding);
+
+            // KA 标志文字 (使用 canvas 生成材质)
+            addLabel(kaBuilding, "UTAR - KA BLOCK", 0, 8, 10.1);
+
+            // KB Block 建筑 (现代蓝白楼)
+            const kbBuilding = new THREE.Mesh(
+                new THREE.BoxGeometry(20, 18, 20),
+                new THREE.MeshStandardMaterial({ color: 0xf8fafc })
+            );
+            kbBuilding.position.set(18, 9, 0);
+            scene.add(kbBuilding);
+            addLabel(kbBuilding, "UTAR - KB BLOCK", 0, 9, 10.1);
+
+            // KA 门前蓝色光柱
+            const beamGeo = new THREE.CylinderGeometry(1.5, 1.5, 6, 32);
+            const beamMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.5 });
+            const beam = new THREE.Mesh(beamGeo, beamMat);
+            beam.position.set(-18, 3, 10);
+            scene.add(beam);
+        }
+
+        function addLabel(parent, text, x, y, z) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, 512, 128);
+            ctx.fillStyle = '#38bdf8'; ctx.font = 'Bold 40px Arial';
+            ctx.textAlign = 'center'; ctx.fillText(text, 256, 75);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const plane = new THREE.Mesh(
+                new THREE.PlaneGeometry(8, 2),
+                new THREE.MeshBasicMaterial({ map: texture, transparent: true })
+            );
+            plane.position.set(x, y, z);
+            parent.add(plane);
+        }
+
+        function clearScene() {
+            while(scene.children.length > 0){ 
+                scene.remove(scene.children[0]); 
+            }
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(20, 40, 20);
+            scene.add(dirLight);
+        }
+
+        // --- 场景转换逻辑 ---
+        function triggerFade(callback) {
+            const overlay = document.getElementById('fade-overlay');
+            overlay.style.opacity = '1';
+            setTimeout(() => {
+                callback();
+                overlay.style.opacity = '0';
+            }, 500);
+        }
+
+        function checkInteractions() {
+            const prompt = document.getElementById('interaction-prompt');
+            prompt.style.display = 'none';
+
+            if (currentSceneState === 'CAMPUS') {
+                // 靠近 KA 楼蓝色光柱
+                if (playerPos.distanceTo(new THREE.Vector3(-18, 1.7, 10)) < 3) {
+                    prompt.innerText = "按 E 进入 KA Block";
+                    prompt.style.display = 'block';
+                    if (keysPressed['KeyE']) enterKALobby();
+                }
+            } else if (currentSceneState === 'KA_LOBBY') {
+                // 靠近电梯
+                if (playerPos.distanceTo(new THREE.Vector3(0, 1.7, -5)) < 2.5) {
+                    prompt.innerText = "按 E 搭乘电梯";
+                    prompt.style.display = 'block';
+                    if (keysPressed['KeyE']) openElevatorUI();
+                }
+            } else if (currentSceneState === 'KA_FLOOR5') {
+                // 靠近 KA501 课室
+                if (playerPos.distanceTo(new THREE.Vector3(-8, 1.7, -10)) < 2.5) {
+                    prompt.innerText = "按 E 进入 KA501 课室";
+                    prompt.style.display = 'block';
+                    if (keysPressed['KeyE']) enterClassroom();
+                }
+            }
+        }
+
+        let keysPressed = {};
+        function onKeyDown(e) {
+            keysPressed[e.code] = true;
+            if (e.code === 'KeyW') moveForward = true;
+            if (e.code === 'KeyS') moveBackward = true;
+            if (e.code === 'KeyA') moveLeft = true;
+            if (e.code === 'KeyD') moveRight = true;
+        }
+
+        function onKeyUp(e) {
+            keysPressed[e.code] = false;
+            if (e.code === 'KeyW') moveForward = false;
+            if (e.code === 'KeyS') moveBackward = false;
+            if (e.code === 'KeyA') moveLeft = false;
+            if (e.code === 'KeyD') moveRight = false;
+        }
+
+        function onMouseMove(e) {
+            if (document.pointerLockElement === document.body) {
+                yaw -= e.movementX * 0.002;
+                pitch -= e.movementY * 0.002;
+                pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, pitch));
+            }
+        }
+
+        // --- KA 南大厅与电梯系统 ---
+        function enterKALobby() {
+            triggerFade(() => {
+                currentSceneState = 'KA_LOBBY';
+                document.getElementById('task-text').innerText = "在 South Lobby 大厅寻找电梯";
+                playerPos.set(0, 1.7, 8);
+                clearScene();
+
+                // 大厅背景墙与 South Lobby 标识
+                const lobbyWall = new THREE.Mesh(
+                    new THREE.BoxGeometry(20, 10, 1),
+                    new THREE.MeshStandardMaterial({ color: 0xf1f5f9 })
+                );
+                lobbyWall.position.set(0, 5, -8);
+                scene.add(lobbyWall);
+                addLabel(lobbyWall, "South Lobby", 0, 3, 0.6);
+
+                // 电梯入口
+                const elevDoor = new THREE.Mesh(
+                    new THREE.BoxGeometry(4, 5, 0.2),
+                    new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8 })
+                );
+                elevDoor.position.set(0, 2.5, -7.8);
+                scene.add(elevDoor);
+                addLabel(elevDoor, "ELEVATOR", 0, 3, 0.2);
+
+                // Public Bank ATM 提款机
+                const atm = new THREE.Mesh(
+                    new THREE.BoxGeometry(2, 4, 2),
+                    new THREE.MeshStandardMaterial({ color: 0xdc2626 })
+                );
+                atm.position.set(6, 2, -7);
+                scene.add(atm);
+            });
+        }
+
+        function openElevatorUI() {
+            document.exitPointerLock();
+            document.getElementById('elevator-ui').style.display = 'block';
+        }
+
+        function selectFloor(floor) {
+            if (floor === '5') {
+                playBeep(600, 0.2);
+                document.getElementById('btn-f5').classList.add('active');
+                let count = 1;
+                const display = document.getElementById('elevator-display');
+                const timer = setInterval(() => {
+                    display.innerText = count;
+                    playBeep(800, 0.1);
+                    if (count === 5) {
+                        clearInterval(timer);
+                        document.getElementById('exit-elevator-btn').style.display = 'inline-block';
+                    }
+                    count++;
+                }, 2000); // 每 2 秒切换数字
+            }
+        }
+
+        function exitElevator() {
+            document.getElementById('elevator-ui').style.display = 'none';
+            document.body.requestPointerLock();
+            triggerFade(() => {
+                currentSceneState = 'KA_FLOOR5';
+                document.getElementById('task-text').innerText = "按路线：左转直走进入 KA501 课室";
+                playerPos.set(0, 1.7, 0);
+                clearScene();
+
+                // 5楼走廊
+                const hall = new THREE.Mesh(
+                    new THREE.BoxGeometry(30, 8, 6),
+                    new THREE.MeshStandardMaterial({ color: 0xe2e8f0, side: THREE.BackSide })
+                );
+                hall.position.set(-5, 4, 0);
+                scene.add(hall);
+
+                // 课室大门
+                const door = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.2, 5, 3),
+                    new THREE.MeshStandardMaterial({ color: 0xb91c1c })
+                );
+                door.position.set(-8, 2.5, -3);
+                scene.add(door);
+            });
+        }
+
+        function enterClassroom() {
+            document.exitPointerLock();
+            currentSceneState = 'CLASSROOM';
+            document.getElementById('wble-screen').style.display = 'flex';
+        }
+
+        function leaveClassroom() {
+            document.getElementById('wble-screen').style.display = 'none';
+            triggerFade(() => {
+                // 跳转去 Hawker Centre
+                startHawkerScene();
+            });
+        }
+
+        // --- Hawker Centre 场景 ---
+        function startHawkerScene() {
+            currentSceneState = 'HAWKER_INSIDE';
+            document.getElementById('task-text').innerText = "找到座位按 E 坐下点餐";
+            playerPos.set(0, 1.7, 5);
+            clearScene();
+
+            // Hawker 室内环境
+            const room = new THREE.Mesh(
+                new THREE.BoxGeometry(20, 8, 20),
+                new THREE.MeshStandardMaterial({ color: 0xfef3c7, side: THREE.BackSide })
+            );
+            room.position.set(0, 4, 0);
+            scene.add(room);
+
+            // 鸡饭档口
+            const stall = new THREE.Mesh(
+                new THREE.BoxGeometry(6, 4, 3),
+                new THREE.MeshStandardMaterial({ color: 0xf59e0b })
+            );
+            stall.position.set(-5, 2, -8);
+            scene.add(stall);
+            addLabel(stall, "海南鸡饭档", 0, 2.5, 1.6);
+
+            // 服务员对话
+            setTimeout(() => {
+                showDrinkDialogue();
+            }, 1000);
+        }
+
+        function showDrinkDialogue() {
+            document.exitPointerLock();
+            const modal = document.getElementById('dialogue-modal');
+            modal.style.display = 'block';
+            document.getElementById('dialogue-title').innerText = "Hawker Centre 点餐";
+            document.getElementById('dialogue-speaker').innerText = "服务员";
+            document.getElementById('dialogue-text').innerText = "Hello！要 Order 什么饮料？";
+
+            const options = document.getElementById('dialogue-options');
+            options.innerHTML = `
+                <button class="modal-btn" onclick="chooseDrink('Kopi Ice')">Kopi Ice (冰咖啡)</button>
+                <button class="modal-btn" onclick="chooseDrink('雪茶')">雪茶 (Chinese Tea Ice)</button>
+                <button class="modal-btn" onclick="chooseDrink('Teh Ice')">Teh Ice (冰拉茶)</button>
+            `;
+        }
+
+        function chooseDrink(drink) {
+            selectedDrink = drink;
+            document.getElementById('dialogue-modal').style.display = 'none';
+            document.body.requestPointerLock();
+            document.getElementById('task-text').innerText = `已点 ${drink}。现在走向鸡饭档对话按 E`;
+        }
+
+        // --- 循环渲染与更新 ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // 视角更新
+            const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+            euler.x = pitch;
+            euler.y = yaw;
+            camera.quaternion.setFromEuler(euler);
+
+            // 玩家移动
+            const dir = new THREE.Vector3();
+            if (moveForward) dir.z -= 1;
+            if (moveBackward) dir.z += 1;
+            if (moveLeft) dir.x -= 1;
+            if (moveRight) dir.x += 1;
+            dir.normalize();
+            dir.applyEuler(new THREE.Euler(0, yaw, 0));
+
+            playerPos.addScaledVector(dir, speed * 0.2);
+            camera.position.copy(playerPos);
+
+            checkInteractions();
+
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
